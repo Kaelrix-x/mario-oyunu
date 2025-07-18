@@ -314,14 +314,15 @@
     finishCount++;
     showingMessage = true;
 
-    let text = '';
-    if (finishCount < 4) {
-      text = 'Bölümü geçtin! ' + finishCount + '. kez tamamladın.';
-    }
+   let text = '';
+if (finishCount < 4) {
+  text = 'Tekrar dene! ' + finishCount + '. deneme.';
+}
 
-    if (finishCount === 4) {
-      text = 'Ben de sensizken bu karakter gibiyim. Ne kadar gidersem gideyim, hep başa dönüyorum. Bölümü geçmeme yardımcı olur musun Sude?';
-    }
+if (finishCount === 4) {
+  text = 'Ben de sensizken bu karakter gibiyim. Ne kadar gidersem gideyim, hep başa dönüyorum. Bölümü geçmeme yardımcı olur musun Sude?';
+}
+
 
     showMessage(text, finishCount === 4);
   }
