@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Super Mario Tarzı Oyun - Tüm Engeller Zorunlu</title>
+
+<!-- Comic Neue fontu -->
+<link href="https://fonts.googleapis.com/css2?family=Comic+Neue&display=swap" rel="stylesheet" />
+
+<style>
+  * {margin:0; padding:0; box-sizing:border-box;}
+  html, body {
+    height: 100%;
+    background: #87ceeb;
+    overflow: hidden;
+    font-family: 'Comic Neue', cursive, sans-serif;
+  }
+  canvas {
+    display: block;
+    background: #5c94fc;
+    margin: 0 auto;
+  }
+  #messageOverlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0,0,0,0.85);
+    color: white;
+    font-size: 5vw;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    z-index: 10;
+    visibility: hidden;
+    font-family: 'Comic Neue', cursive, sans-serif;
+  }
+  #touchControls {
+    position: fixed;
+    bottom: 15px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80%;
+    max-width: 400px;
+    display: flex;
+    justify-content: space-around;
+    z-index: 20;
+  }
+  .btn {
+    background: rgba(255,255,255,0.7);
+    border-radius: 10px;
+    padding: 20px 25px;
+    font-size: 2em;
+    user-select: none;
+    touch-action: none;
+    font-family: 'Comic Neue', cursive, sans-serif;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+<div id="messageOverlay"></div>
+
+<div id="touchControls">
+  <div class="btn" id="leftBtn">◀️</div>
+  <div class="btn" id="jumpBtn">⬆️</div>
+  <div class="btn" id="rightBtn">▶️</div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const messageOverlay = document.getElementById('messageOverlay');
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const W = canvas.width;
+  const H = canvas.height;
+
+  const scaleX = canvas.width / 800;
+  const scaleY = canvas.height / 450;
+
+  const gravity = 0.5 * scaleY;
+  const floorY = canvas.height - 50 * scaleY;
+
+  // Platformlar ve yeni eklenen 3 engel:
+  const platforms = [
+    {x: 0, y: floorY, width: canvas.width, height: 50 * scaleY, color: 'green'},
+    {x: 250 * scaleX, y: floorY - 80 * scaleY, width: 100 * scaleX, height: 20 * scaleY, color: 'darkgreen'},
+    {x: 450 * scaleX, y: floorY - 140 * scaleY, width: 120 * scaleX, height: 20 * scaleY, color: 'darkolivegreen'},
+    {x: 620 * scaleX, y: floorY - 60 * scaleY, width: 80 * scaleX, height: 20 * scaleY, color: 'seagreen'},
+
+    {x: 150 * scaleX, y: floorY - 120 * scaleY, width: 90 * scaleX, height: 20 * scaleY, color: 'forestgreen'},
+    {x: 350 * scaleX, y: floorY - 200 * scaleY, width: 70 * scaleX, height: 20 * scaleY, color: 'olive'},
+    {x: 540 * scaleX, y: floorY - 90 * scaleY, width: 60 * scaleX, height: 20 * scaleY, color: 'darkseagreen'},
+  ];
+
+  const goal = {
+    x: canvas.width - 90 * scaleX,
+    y: floorY - 120 * scaleY,
+    width: 50 * scaleX,
+    height: 120 * scaleY,
+    color: 'yellow',
+  };
+
+  const player = {
+    width: 30 * scaleX,
+    height: 40 * scaleY,
+    x: 50 * scaleX,
+    y: floorY - 40 * scaleY,
+    speedX: 0,
+    speedY: 0,
+    onGround: false,
+  };
+
+  let visitedPlatforms = new Array(platforms.length).fill(false);
+
+  const keys = {};
+  window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+  window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+  const leftBtn = document.getElementById('leftBtn');
+  const rightBtn = document.getElementById('rightBtn');
+  const jumpBtn = document.getElementById('jumpBtn');
+
+  leftBtn.addEventListener('touchstart', e => { keys['a'] = true; e.preventDefault(); });
+  leftBtn.addEventListener('touchend', e => { keys['a'] = false; e.preventDefault(); });
+
+  rightBtn.addEventListener('touchstart', e => { keys['d'] = true; e.preventDefault(); });
+  rightBtn.addEventListener('touchend', e => { keys['d'] = false; e.preventDefault(); });
+
+  jumpBtn.addEventListener('touchstart', e => { keys['w'] = true; e.preventDefault(); });
+  jumpBtn.addEventListener('touchend', e => { keys['w'] = false; e.preventDefault(); });
+
+  function rectIntersect(r1, r2) {
+    return !(r2.x > r1.x + r1.width ||
+             r2.x + r2.width < r1.x ||
+             r2.y > r1.y + r1.height ||
+             r2.y + r2.height < r1.y);
+  }
+
+  // Yeni Mario benzeri karakter çizimi
+  function drawPlayer() {
+    const px = player.x;
+    const py = player.y;
+    const w = player.width;
+    const h = player.height;
+
+    // Tulumu mavi tonlarında
+    ctx.fillStyle = '#3366cc'; // Mavi tulum
+    ctx.fillRect(px, py + h * 0.3, w, h * 0.7);
+
+    // Kollara yuvarlak ekleyelim
+    ctx.beginPath();
+    ctx.fillStyle = '#3366cc';
+    ctx.arc(px + w * 0.15, py + h * 0.65, w * 0.15, 0, Math.PI * 2);
+    ctx.arc(px + w * 0.85, py + h * 0.65, w * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Baş (ten rengi)
+    ctx.fillStyle = '#f1c27d';
+    ctx.beginPath();
+    ctx.arc(px + w / 2, py + h * 0.25, h * 0.25, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Şapka (kırmızı)
+    ctx.fillStyle = '#cc0000';
+    ctx.beginPath();
+    ctx.arc(px + w / 2, py + h * 0.15, h * 0.22, Math.PI, 0);
+    ctx.fill();
+
+    // Şapkanın gölgesi
+    ctx.fillStyle = '#990000';
+    ctx.beginPath();
+    ctx.ellipse(px + w / 2, py + h * 0.15, h * 0.3, h * 0.1, 0, 0, Math.PI);
+    ctx.fill();
+
+    // Gözler (beyaz)
+    ctx.fillStyle = 'white';
+    ctx.beginPath();
+    ctx.arc(px + w * 0.38, py + h * 0.27, h * 0.05, 0, Math.PI * 2);
+    ctx.arc(px + w * 0.62, py + h * 0.27, h * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Göz içi (siyah)
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.arc(px + w * 0.38, py + h * 0.27, h * 0.025, 0, Math.PI * 2);
+    ctx.arc(px + w * 0.62, py + h * 0.27, h * 0.025, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Burun
+    ctx.fillStyle = '#f1b17d';
+    ctx.beginPath();
+    ctx.arc(px + w / 2, py + h * 0.38, h * 0.07, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ağız (hafif gülümseme)
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px + w * 0.35, py + h * 0.45);
+    ctx.quadraticCurveTo(px + w * 0.5, py + h * 0.55, px + w * 0.65, py + h * 0.45);
+    ctx.stroke();
+
+    // Ayakkabılar (kahverengi)
+    ctx.fillStyle = '#663300';
+    ctx.beginPath();
+    ctx.ellipse(px + w * 0.25, py + h * 0.95, w * 0.15, h * 0.07, 0, 0, Math.PI * 2);
+    ctx.ellipse(px + w * 0.75, py + h * 0.95, w * 0.15, h * 0.07, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawPlatforms() {
+    platforms.forEach(p => {
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x, p.y, p.width, p.height);
+    });
+  }
+
+  function drawGoal() {
+    ctx.fillStyle = 'saddlebrown';
+    ctx.fillRect(goal.x + goal.width/2 - 5 * scaleX, goal.y, 10 * scaleX, goal.height);
+
+    ctx.fillStyle = 'red';
+    ctx.beginPath();
+    ctx.moveTo(goal.x + goal.width/2 + 5 * scaleX, goal.y + 15 * scaleY);
+    ctx.lineTo(goal.x + goal.width/2 + 50 * scaleX, goal.y + 45 * scaleY);
+    ctx.lineTo(goal.x + goal.width/2 + 5 * scaleX, goal.y + 75 * scaleY);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'gold';
+    ctx.beginPath();
+    ctx.arc(goal.x + goal.width/2, goal.y, 10 * scaleX, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  let finishCount = 0;
+  let showingMessage = false;
+
+  function gameLoop() {
+    if (showingMessage) return;
+
+    if (keys['a']) {
+      player.speedX = -3 * scaleX;
+    } else if (keys['d']) {
+      player.speedX = 3 * scaleX;
+    } else {
+      player.speedX = 0;
+    }
+
+    if ((keys['w'] || keys[' ']) && player.onGround) {
+      player.speedY = -12 * scaleY;
+      player.onGround = false;
+    }
+
+    player.speedY += gravity;
+
+    player.x += player.speedX;
+    player.y += player.speedY;
+
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+    player.onGround = false;
+    platforms.forEach((p, i) => {
+      if (rectIntersect(player, p)) {
+        if (player.speedY >= 0 && player.y + player.height <= p.y + player.speedY) {
+          player.y = p.y - player.height;
+          player.speedY = 0;
+          player.onGround = true;
+
+          visitedPlatforms[i] = true;
+        }
+      }
+    });
+
+    const allVisited = visitedPlatforms.every(v => v === true);
+
+    if (rectIntersect(player, goal) && allVisited) {
+      levelComplete();
+      return;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    drawPlatforms();
+    drawGoal();
+    drawPlayer();
+
+    platforms.forEach((p, i) => {
+      if (!visitedPlatforms[i]) {
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(p.x, p.y, p.width, p.height);
+      }
+    });
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  function levelComplete() {
+    finishCount++;
+    showingMessage = true;
+
+    let text = '';
+    if (finishCount < 4) {
+      text = 'Bölümü geçtin! ' + finishCount + '. kez tamamladın.';
+    }
+
+    if (finishCount === 4) {
+      text = 'Ben de sensizken bu karakter gibiyim. Ne kadar gidersem gideyim, hep başa dönüyorum. Bölümü geçmeme yardımcı olur musun Sude?';
+    }
+
+    showMessage(text, finishCount === 4);
+  }
+
+  function showMessage(text, fullScreen) {
+    messageOverlay.style.visibility = 'visible';
+    messageOverlay.style.fontSize = fullScreen ? '6vw' : '5vw';
+    messageOverlay.textContent = text;
+
+    if (!fullScreen) {
+      setTimeout(() => {
+        messageOverlay.style.visibility = 'hidden';
+        showingMessage = false;
+        resetPlayer();
+        visitedPlatforms.fill(false);
+        gameLoop();
+      }, 3000);
+    } else {
+      messageOverlay.style.cursor = 'pointer';
+      messageOverlay.addEventListener('click', () => {
+        finishCount = 0;
+        messageOverlay.style.visibility = 'hidden';
+        messageOverlay.style.cursor = 'default';
+        showingMessage = false;
+        resetPlayer();
+        visitedPlatforms.fill(false);
+        gameLoop();
+      }, {once:true});
+    }
+  }
+
+  function resetPlayer() {
+    player.x = 50 * scaleX;
+    player.y = floorY - player.height;
+    player.speedX = 0;
+    player.speedY = 0;
+  }
+
+  resetPlayer();
+  gameLoop();
+
+})();
+</script>
+
+</body>
+</html>
+
